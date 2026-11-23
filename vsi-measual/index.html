@@ -127,6 +127,18 @@
     border:1px solid var(--line); border-radius:6px}
   .errbar input:focus{outline:2px solid var(--accent); outline-offset:1px}
   .errbar .count{font-size:.82rem; color:var(--muted); white-space:nowrap}
+  /* Section/ROI quick-jump box inside the same pinned bar. */
+  .docq-wrap{position:relative; display:flex; align-items:center; gap:8px;
+    flex:1.2; min-width:0}
+  .docq-wrap input{flex:1; min-width:0}
+  .docq-hits{position:absolute; top:calc(100% + 8px); left:0; right:0;
+    max-height:60vh; overflow:auto; margin:0; padding:4px; list-style:none;
+    background:#fff; border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 8px 24px rgba(20,40,60,.18); z-index:60}
+  .docq-hits li{padding:7px 10px; border-radius:5px; cursor:pointer;
+    font-size:.9rem; line-height:1.35}
+  .docq-hits li small{display:block; color:var(--muted); font-size:.75rem}
+  .docq-hits li.active,.docq-hits li:hover{background:var(--accent-soft)}
   .errcat td code.src{font-size:.78em; background:none; border:0; padding:0;
     color:var(--muted)}
   #errcat tr.hit td{background:var(--accent-soft)}
@@ -162,6 +174,13 @@
 <body>
 <a class="skip-link screen-only" href="#noi-dung">Đến nội dung hướng dẫn</a>
 <div class="errbar screen-only" id="errbar">
+  <div class="docq-wrap">
+    <label for="docq">Tìm mục / ROI:</label>
+    <input id="docq" type="search" autocomplete="off" role="combobox"
+           aria-expanded="false" aria-controls="docq-hits"
+           placeholder="gõ tên ROI (edge, barcode, intensity…) hoặc mục — Enter để tới">
+    <ul class="docq-hits" id="docq-hits" role="listbox" hidden></ul>
+  </div>
   <label for="errq">Tra cứu mã lỗi / thông báo:</label>
   <input id="errq" type="search" autocomplete="off"
          placeholder="gõ mã lỗi (vd anomaly_execution_failed) hoặc từ khóa trong thông báo — Enter để tới danh mục">
@@ -11766,6 +11785,80 @@ nhân</strong> khi thông báo nói chung chung. Cách đọc:</p>
       if (first) first.scrollIntoView({block: 'center'});
     }
     if (e.key === 'Escape') { input.value = ''; apply(); }
+  });
+})();
+
+// Section/ROI quick-jump — indexes nav-tree links and h2/h3 headings;
+// accent-insensitive so "dò biên"/"do bien" both match.
+(() => {
+  const input = document.getElementById('docq');
+  const hitsBox = document.getElementById('docq-hits');
+  if (!input || !hitsBox) return;
+  const fold = s => s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'd');
+  const entries = [];
+  const seen = new Set();
+  const push = (title, id, crumb) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    entries.push({ title, id, crumb });
+  };
+  document.querySelectorAll('h2[id],h3[id]').forEach(h => {
+    const crumb = h.closest('details')?.querySelector('summary')?.textContent.trim() || '';
+    push(h.textContent.trim(), h.id, crumb);
+  });
+  document.querySelectorAll('.nav-tree a').forEach(a => {
+    const id = (a.getAttribute('href') || '').replace(/^#/, '');
+    push(a.textContent.trim(), id, '');
+  });
+  let items = [];
+  const close = () => { hitsBox.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+  const go = id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    close();
+    window.location.hash = '#' + id;
+    el.scrollIntoView({ block: 'start' });
+  };
+  const render = () => {
+    const q = fold(input.value.trim());
+    items = !q ? [] : entries.filter(e =>
+      fold(e.title).includes(q) || fold(e.id).includes(q)).slice(0, 12);
+    hitsBox.innerHTML = '';
+    items.forEach((e, i) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = e.title;
+      if (e.crumb) {
+        const small = document.createElement('small');
+        small.textContent = e.crumb;
+        li.appendChild(small);
+      }
+      li.addEventListener('mousedown', ev => { ev.preventDefault(); go(e.id); });
+      if (i === 0) li.classList.add('active');
+      hitsBox.appendChild(li);
+    });
+    const open = items.length > 0;
+    hitsBox.hidden = !open;
+    input.setAttribute('aria-expanded', String(open));
+  };
+  input.addEventListener('input', render);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && items.length) { e.preventDefault(); go(items[0].id); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const lis = Array.from(hitsBox.children);
+      if (!lis.length) return;
+      e.preventDefault();
+      let i = lis.findIndex(li => li.classList.contains('active'));
+      i = (i + (e.key === 'ArrowDown' ? 1 : lis.length - 1)) % lis.length;
+      lis.forEach((li, j) => li.classList.toggle('active', j === i));
+      lis[i].scrollIntoView({ block: 'nearest' });
+    }
+    if (e.key === 'Escape') { input.value = ''; render(); input.blur(); }
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.docq-wrap')) close();
   });
 })();
 </script>
